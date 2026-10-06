@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cath Lab Dashboard</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2430;--mute:#667085;--line:#e4e7ec;--a:#2563eb;--b:#0f9d7a;--c:#d97706;--d:#dc2626}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f141b;--card:#171e28;--ink:#e8edf3;--mute:#93a0b2;--line:#263040;--a:#60a5fa;--b:#34d399;--c:#fbbf24;--d:#f87171}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+  header{padding:20px 16px 8px;max-width:1100px;margin:auto}
+  h1{margin:0;font-size:22px}
+  .note{color:var(--mute);font-size:13px}
+  main{max-width:1100px;margin:auto;padding:8px 16px 32px;display:grid;gap:16px}
+  .filters{display:flex;gap:8px;flex-wrap:wrap}
+  select{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .kpi b{display:block;font-size:26px}
+  .kpi span{color:var(--mute);font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  h2{font-size:15px;margin:0 0 10px}
+  .bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+  .bar .l{width:110px;color:var(--mute)}
+  .bar .t{flex:1;background:var(--line);border-radius:6px;height:14px;overflow:hidden}
+  .bar .t i{display:block;height:100%;border-radius:6px}
+  .bar .v{width:48px;text-align:right}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+  svg{width:100%;height:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cath Lab Dashboard</h1>
+  <div class="note">Illustrative sample data. Replace the <code>CASES</code> array in this file with real exports.</div>
+</header>
+<main>
+  <div class="filters">
+    <select id="fRoom"><option value="">All rooms</option></select>
+    <select id="fProc"><option value="">All procedures</option></select>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid">
+    <div class="card"><h2>Procedures by type</h2><div id="byProc"></div></div>
+    <div class="card"><h2>Room utilization (avg minutes/case)</h2><div id="byRoom"></div></div>
+    <div class="card"><h2>Weekly volume</h2><div id="trend"></div></div>
+    <div class="card"><h2>Recent cases</h2><div id="tbl"></div></div>
+  </div>
+</main>
+<script>
+// Sample data: date, room, procedure, door-to-device/duration minutes, complication flag
+const PROCS=["Diagnostic angiography","PCI","TAVI","Pacemaker","Ablation"];
+const ROOMS=["Lab 1","Lab 2","Lab 3"];
+const BASE=[35,70,120,60,150];
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const CASES=Array.from({length:240},(_,i)=>{
+  const p=Math.floor(rnd()*PROCS.length);
+  const d=new Date(2026,8,1+Math.floor(i/8));
+  return{date:d,room:ROOMS[Math.floor(rnd()*3)],proc:PROCS[p],
+    min:Math.round(BASE[p]*(0.8+rnd()*0.5)),comp:rnd()<0.04};
+});
+const $=id=>document.getElementById(id);
+const COL=["var(--a)","var(--b)","var(--c)","var(--d)","var(--a)"];
+function fill(sel,arr){arr.forEach(v=>sel.add(new Option(v,v)))}
+fill($("fRoom"),ROOMS);fill($("fProc"),PROCS);
+const group=(rows,k)=>rows.reduce((m,r)=>((m[r[k]]??=[]).push(r),m),{});
+const avg=a=>a.length?Math.round(a.reduce((s,x)=>s+x,0)/a.length):0;
+function bars(el,items,max,unit=""){
+  el.innerHTML=items.map(([l,v],i)=>`<div class="bar"><span class="l">${l}</span><span class="t"><i style="width:${max?v/max*100:0}%;background:${COL[i%5]}"></i></span><span class="v">${v}${unit}</span></div>`).join("");
+}
+function render(){
+  const r=$("fRoom").value,p=$("fProc").value;
+  const rows=CASES.filter(c=>(!r||c.room===r)&&(!p||c.proc===p));
+  const comp=rows.filter(c=>c.comp).length;
+  $("kpis").innerHTML=[
+    ["Total cases",rows.length],
+    ["Avg duration",avg(rows.map(c=>c.min))+" min"],
+    ["Complication rate",rows.length?(comp/rows.length*100).toFixed(1)+"%":"–"],
+    ["Cases / day",rows.length?(rows.length/new Set(rows.map(c=>+c.date)).size).toFixed(1):"–"]
+  ].map(([l,v])=>`<div class="card kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+  const bp=Object.entries(group(rows,"proc")).map(([k,v])=>[k,v.length]);
+  bars($("byProc"),bp,Math.max(...bp.map(x=>x[1]),1));
+  const br=Object.entries(group(rows,"room")).map(([k,v])=>[k,avg(v.map(c=>c.min))]);
+  bars($("byRoom"),br,Math.max(...br.map(x=>x[1]),1)," m");
+  const wk={};rows.forEach(c=>{const w=Math.floor((c.date-new Date(2026,8,1))/6048e5);wk[w]=(wk[w]||0)+1});
+  const ks=Object.keys(wk).sort((a,b)=>a-b),mx=Math.max(...Object.values(wk),1);
+  $("trend").innerHTML=`<svg viewBox="0 0 300 120" role="img" aria-label="Weekly volume">`+
+    ks.map((k,i)=>{const h=wk[k]/mx*90,w=300/ks.length;return `<rect x="${i*w+4}" y="${100-h}" width="${w-8}" height="${h}" rx="4" fill="var(--a)"/><text x="${i*w+w/2}" y="114" font-size="9" text-anchor="middle" fill="var(--mute)">W${+k+1}</text><text x="${i*w+w/2}" y="${96-h}" font-size="9" text-anchor="middle" fill="var(--ink)">${wk[k]}</text>`}).join("")+`</svg>`;
+  $("tbl").innerHTML=`<table><tr><th>Date</th><th>Room</th><th>Procedure</th><th>Min</th></tr>`+
+    rows.slice(-8).reverse().map(c=>`<tr><td>${c.date.toISOString().slice(0,10)}</td><td>${c.room}</td><td>${c.proc}</td><td>${c.min}${c.comp?" ⚠":""}</td></tr>`).join("")+`</table>`;
+}
+$("fRoom").onchange=$("fProc").onchange=render;render();
+</script>
+</body>
+</html>
